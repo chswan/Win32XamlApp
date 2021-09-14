@@ -57,6 +57,11 @@ struct AppWindow
 
     void CreateWebView()
     {
+        // Force window-to-visual hosting mode, which is going to be a requirement to make non-ZBID_DESKTOP scenarios work
+        ::SetEnvironmentVariable(L"COREWEBVIEW2_FORCED_HOSTING_MODE",
+            L"COREWEBVIEW2_HOSTING_MODE_WINDOW_TO_VISUAL");
+
+
         WNDCLASSEXW wcex{ sizeof(wcex) };
         wcex.lpszClassName = L"WebViewHostChildClass";
         wcex.hInstance = wil::GetModuleInstanceHandle();
@@ -97,15 +102,12 @@ struct AppWindow
 
                             // Resize WebView to fit the bounds of the parent window
                             RECT bounds;
-                            GetClientRect(m_window.get(), &bounds);
-                            bounds.right -= 100;
-                            bounds.left += 100;
-                            bounds.top += 100;
-                            bounds.bottom -= 100;
+                            GetClientRect(m_webviewHostChild, &bounds);
                             m_webViewController->put_Bounds(bounds);
 
                             // Schedule an async task to navigate to Hamster Dance
                             m_webView->Navigate(L"https://hamster.dance/hamsterdance/");
+                            //m_webView->Navigate(L"https://bing.com");
 
                             // Step 4 - Navigation events
 
@@ -205,6 +207,21 @@ struct AppWindow
         const auto dx = LOWORD(lparam), dy = HIWORD(lparam);
         SetWindowPos(m_xamlSourceWindow, HWND_BOTTOM, 0, 0, dx, dy, SWP_SHOWWINDOW | SWP_NOACTIVATE);
         SetWindowPos(m_xamlHostChild, HWND_BOTTOM, 0, 0, dx, dy, SWP_SHOWWINDOW | SWP_NOACTIVATE);
+
+        if (m_webViewController)
+        {
+            RECT rcClient;
+            GetClientRect(m_window.get(), &rcClient);
+            rcClient.right -= 100;
+            rcClient.left += 100;
+            rcClient.top += 100;
+            rcClient.bottom -= 100;
+            SetWindowPos(m_webviewHostChild, HWND_TOP, 100, 100, rcClient.right - rcClient.left, rcClient.bottom - rcClient.top, SWP_NOACTIVATE);
+
+            GetClientRect(m_webviewHostChild, &rcClient);
+            m_webViewController->put_Bounds(rcClient);
+        }
+
         return 0;
     }
 
