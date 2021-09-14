@@ -2,6 +2,7 @@
 
 #include <wil/cppwinrt.h>
 #include <wil/com.h>
+#include <wrl.h>
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
