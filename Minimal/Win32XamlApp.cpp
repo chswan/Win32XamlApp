@@ -81,7 +81,8 @@ struct AppWindow
                     // Create a CoreWebView2Controller and get the associated CoreWebView2 whose parent is the main window hWnd
                     env->CreateCoreWebView2Controller(m_webviewHostChild, Microsoft::WRL::Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
                         [this](HRESULT result, ICoreWebView2Controller* controller) -> HRESULT {
-                            if (controller != nullptr) {
+                            if (controller != nullptr)
+                            {
                                 m_webViewController = controller;
                                 m_webViewController->get_CoreWebView2(&m_webView);
                             }
@@ -103,17 +104,36 @@ struct AppWindow
                             bounds.bottom -= 100;
                             m_webViewController->put_Bounds(bounds);
 
-                            // Schedule an async task to navigate to Bing
-                            m_webView->Navigate(L"https://www.bing.com/");
-
-                            m_webViewController->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_NEXT);
+                            // Schedule an async task to navigate to Hamster Dance
+                            m_webView->Navigate(L"https://hamster.dance/hamsterdance/");
 
                             // Step 4 - Navigation events
 
                             // Step 5 - Scripting
 
                             // Step 6 - Communication between host and web content
+                            THROW_IF_FAILED(m_webViewController->add_MoveFocusRequested(
+                                Microsoft::WRL::Callback<ICoreWebView2MoveFocusRequestedEventHandler>(
+                                    [this](
+                                        ICoreWebView2Controller* sender,
+                                        ICoreWebView2MoveFocusRequestedEventArgs* args) -> HRESULT {
+                                        COREWEBVIEW2_MOVE_FOCUS_REASON reason;
+                                        THROW_IF_FAILED(args->get_Reason(&reason));
 
+                                        const bool forward = (reason == COREWEBVIEW2_MOVE_FOCUS_REASON_NEXT);
+                                        m_xamlSource.NavigateFocus(winrt::Windows::UI::Xaml::Hosting::XamlSourceFocusNavigationRequest(
+                                            forward ? winrt::Windows::UI::Xaml::Hosting::XamlSourceFocusNavigationReason::First
+                                                    : winrt::Windows::UI::Xaml::Hosting::XamlSourceFocusNavigationReason::Last));
+
+                                        THROW_IF_FAILED(args->put_Handled(TRUE));
+                                        return S_OK;
+                                    }).Get(),
+                                &m_webViewMoveFocusToken));
+
+
+                            // Kick off initialization of XAML now. We don't actually have to wait, this is just the simplest way for me to manage fixing XAML's z-order after the webview is ready.
+                            // When doing this properly, we should be creating the relevant child HWNDs both up-front and z-ordering appropriately so that we actually don't care
+                            // when the two frameworks are ready to go. This structure is mostly an artifact from before I had set up the two child HWNDs.
                             PostMessage(m_window.get(), WM_USER, 0, 0);
 
                             return S_OK;
@@ -156,11 +176,19 @@ struct AppWindow
         m_xamlSource.Content(content);
 
         // TODO: register for tab-out events, transfer focus to webview in handler
-        //m_xamlSource.TakeFocusRequested()
+        m_xamlTakeFocusRevoker = m_xamlSource.TakeFocusRequested(winrt::auto_revoke, { this, &AppWindow::OnTakeFocusRequestedFromXaml });
         
 
         SetWindowPos(m_xamlSourceWindow, HWND_BOTTOM, 0, 0, rcClient.right - rcClient.left, rcClient.bottom - rcClient.top, SWP_SHOWWINDOW | SWP_NOACTIVATE);
 
+    }
+
+    void OnTakeFocusRequestedFromXaml(
+        [[maybe_unused]] const winrt::Windows::UI::Xaml::Hosting::DesktopWindowXamlSource& source,
+        const winrt::Windows::UI::Xaml::Hosting::DesktopWindowXamlSourceTakeFocusRequestedEventArgs& args)
+    {
+        const bool forward = args.Request().Reason() == winrt::Windows::UI::Xaml::Hosting::XamlSourceFocusNavigationReason::First;
+        m_webViewController->MoveFocus(forward ? COREWEBVIEW2_MOVE_FOCUS_REASON_NEXT : COREWEBVIEW2_MOVE_FOCUS_REASON_PREVIOUS);
     }
 
     LRESULT OnCreate()
@@ -242,10 +270,12 @@ struct AppWindow
     winrt::Windows::UI::Xaml::Hosting::DesktopWindowXamlSource m_xamlSource{ nullptr };
 
     winrt::Windows::UI::Xaml::UIElement::PointerPressed_revoker m_pointerPressedRevoker;
+    winrt::Windows::UI::Xaml::Hosting::DesktopWindowXamlSource::TakeFocusRequested_revoker m_xamlTakeFocusRevoker;
 
     HWND m_webviewHostChild{};
     Microsoft::WRL::ComPtr<ICoreWebView2Controller> m_webViewController;
     Microsoft::WRL::ComPtr<ICoreWebView2> m_webView;
+    EventRegistrationToken m_webViewMoveFocusToken{};
 };
 
 int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int nCmdShow)
